@@ -121,7 +121,7 @@ void motor_start_u() {
 
 void motor_start_d() {
     dir_flag = -1;
-    HAL_GPIO_WritePin(DIR1_GPIO_Port, DIR1_Pin, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(DIR1_GPIO_Port, DIR1_Pin, GPIO_PIN_RESET);
     HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_3);
     HAL_UART_Transmit(&huart3, buffer.ptr, 9, 0xffff);
 }
