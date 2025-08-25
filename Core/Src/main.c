@@ -78,8 +78,8 @@ int32_t currentAngle_pulse = 0;
 int32_t dir_flag = 0;
 uint32_t tmpPulse = 0;
 uint8_t isSingleMod = 0;
-uint8_t isWorking = 0;
-uint32_t checkTmp = 0;
+uint8_t isWorking = 0;//是否正在采集
+uint32_t checkTmp = 0;//采集角度的中间变量
 uint32_t checkCount = 0;
 /* USER CODE END PV */
 
@@ -94,53 +94,53 @@ void SystemClock_Config(void);
 float getCurrentAngle_f32() {
     return (float) currentAngle_pulse * 360.0f / (float) circlePulse;
 }
-void motor_start_work(){
+
+void motor_start_work() {
     HAL_UART_Transmit(&huart3, buffer.ptr, 9, 0xffff);
-    memcpy(tx_buffer.ptr,buffer.ptr, 9);
+    memcpy(tx_buffer.ptr, buffer.ptr, 9);
     checkTmp = 0;
     isWorking = 1;
     dir_flag = 1;
     HAL_GPIO_WritePin(DIR1_GPIO_Port, DIR1_Pin, GPIO_PIN_SET);
     HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_3);
 }
-void motor_stop_work(){
+
+void motor_stop_work() {
     checkCount = 0;
     tx_buffer.B.fun = 0X09;
-    HAL_UART_Transmit_DMA(&huart3,tx_buffer.ptr,9);
-    HAL_TIM_PWM_Stop(&htim2,TIM_CHANNEL_3);
+    tx_buffer.B.data.f32 = getCurrentAngle_f32();
+    HAL_UART_Transmit_DMA(&huart3, tx_buffer.ptr, 9);
+    HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_3);
     isWorking = 0;
-    checkTmp= 0 ;
+    checkTmp = 0;
 }
+
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
     if (htim->Instance == TIM2) {
-        if (dir_flag){
+        if (dir_flag) {
             currentAngle_pulse++;
-        }else{
+        } else {
             currentAngle_pulse--;
         }
-        if (currentAngle_pulse > (int32_t)circlePulse) {
+        if (currentAngle_pulse > (int32_t) circlePulse) {
             currentAngle_pulse = 0;
         } else if (currentAngle_pulse < 0) {
             currentAngle_pulse = (int32_t) circlePulse;
         }
-        if (isWorking){
+        if (isWorking) {
             checkTmp++;
             checkCount++;
 
-            if (checkCount>=circlePulse){
+            if (checkCount >= circlePulse) {
                 motor_stop_work();
-            }
-            else if (checkTmp>=singleStepPulse){
+            } else if (checkTmp >= singleStepPulse) {
                 checkTmp = 0;
                 tx_buffer.B.data.f32 = getCurrentAngle_f32();
-                HAL_UART_Transmit_DMA(&huart3,tx_buffer.ptr,9);
-                checkCount++;
+                HAL_UART_Transmit_DMA(&huart3, tx_buffer.ptr, 9);
             }
         }
     }
 }
-
-
 
 
 void motor_start_u() {
@@ -152,7 +152,7 @@ void motor_start_u() {
 
 void motor_start_d() {
     dir_flag = 0;
-    HAL_GPIO_WritePin(DIR1_GPIO_Port, DIR1_Pin, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(DIR1_GPIO_Port, DIR1_Pin, GPIO_PIN_RESET);
     HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_3);
     HAL_UART_Transmit(&huart3, buffer.ptr, 9, 0xffff);
 }
@@ -295,6 +295,7 @@ int main(void) {
     HAL_TIM_Base_Start_IT(&htim2);
     HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_3);
     HAL_UARTEx_ReceiveToIdle_DMA(&huart3, buffer.ptr, 9);
+    setSpeedPulse(125);
     /* USER CODE END 2 */
 
     /* Infinite loop */
