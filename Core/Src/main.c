@@ -64,7 +64,7 @@ typedef union {
 } Pkg;
 #pragma pack()
 Pkg buffer;
-
+Pkg tx_buffer;
 
 
 /* USER CODE END PM */
@@ -79,6 +79,8 @@ int32_t dir_flag = 0;
 uint32_t tmpPulse = 0;
 uint8_t isSingleMod = 0;
 uint8_t isWorking = 0;
+uint32_t checkTmp = 0;
+uint32_t checkCount = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -88,29 +90,58 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+float getCurrentAngle_f32() {
+    return (float) currentAngle_pulse * 360.0f / (float) circlePulse;
+}
+void motor_start_work(){
+    HAL_UART_Transmit(&huart3, buffer.ptr, 9, 0xffff);
+    memcpy(tx_buffer.ptr,buffer.ptr, 9);
+    checkTmp = 0;
+    isWorking = 1;
+    dir_flag = 1;
+    HAL_GPIO_WritePin(DIR1_GPIO_Port, DIR1_Pin, GPIO_PIN_SET);
+    HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_3);
+}
+void motor_stop_work(){
+    checkCount = 0;
+    tx_buffer.B.fun = 0X09;
+    HAL_UART_Transmit_DMA(&huart3,tx_buffer.ptr,9);
+    HAL_TIM_PWM_Stop(&htim2,TIM_CHANNEL_3);
+    isWorking = 0;
+    checkTmp= 0 ;
+}
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
     if (htim->Instance == TIM2) {
-//        if (isSingleMod == 1) {
-//            tmpPulse++;
-//            if (singleStepPulse <= tmpPulse) {
-//                HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_3);
-//                tmpPulse = 0;
-//                isSingleMod = 0;
-//            }
-//        }
-        currentAngle_pulse += dir_flag;
-        if (currentAngle_pulse > circlePulse) {
+        if (dir_flag){
+            currentAngle_pulse++;
+        }else{
+            currentAngle_pulse--;
+        }
+        if (currentAngle_pulse > (int32_t)circlePulse) {
             currentAngle_pulse = 0;
         } else if (currentAngle_pulse < 0) {
             currentAngle_pulse = (int32_t) circlePulse;
+        }
+        if (isWorking){
+            checkTmp++;
+            checkCount++;
+
+            if (checkCount>=circlePulse){
+                motor_stop_work();
+            }
+            else if (checkTmp>=singleStepPulse){
+                checkTmp = 0;
+                tx_buffer.B.data.f32 = getCurrentAngle_f32();
+                HAL_UART_Transmit_DMA(&huart3,tx_buffer.ptr,9);
+                checkCount++;
+            }
         }
     }
 }
 
 
-float getCurrentAngle_f32() {
-    return (float) currentAngle_pulse * 360.0f / (float) circlePulse;
-}
+
 
 void motor_start_u() {
     dir_flag = 1;
@@ -120,7 +151,7 @@ void motor_start_u() {
 }
 
 void motor_start_d() {
-    dir_flag = -1;
+    dir_flag = 0;
     HAL_GPIO_WritePin(DIR1_GPIO_Port, DIR1_Pin, GPIO_PIN_SET);
     HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_3);
     HAL_UART_Transmit(&huart3, buffer.ptr, 9, 0xffff);
@@ -191,15 +222,13 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
                     }
                         //获取当前角度
                     case 4: {
-                        float value = getCurrentAngle_f32();
-                        buffer.B.data.f32 = value;
+                        buffer.B.data.f32 = getCurrentAngle_f32();
                         HAL_UART_Transmit(&huart3, buffer.ptr, 9, 0xffff);
                         break;
                     }
 
                     case 5: {
-                        isWorking = 1;
-                        HAL_UART_Transmit(&huart3, buffer.ptr, 9, 0xffff);
+                        motor_start_work();
                         break;
                     }
                     case 6: {
@@ -212,6 +241,11 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
                     }
                     case 8: {
                         motor_stop();
+                        break;
+                    }
+                    case 9: {
+                        motor_stop_work();
+
                         break;
                     }
                     default:
@@ -259,6 +293,7 @@ int main(void) {
     MX_USART6_UART_Init();
     /* USER CODE BEGIN 2 */
     HAL_TIM_Base_Start_IT(&htim2);
+    HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_3);
     HAL_UARTEx_ReceiveToIdle_DMA(&huart3, buffer.ptr, 9);
     /* USER CODE END 2 */
 
